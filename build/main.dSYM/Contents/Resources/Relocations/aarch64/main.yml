@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/chris/Documents/Development/C/JSON_Helper/V1/build/main'
+relocations:     []
+...
