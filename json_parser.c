@@ -463,8 +463,8 @@ static JsonValue* parse_object(ParserState* state) {
 static JsonValue* parse_value(ParserState* state) {
     skip_whitespace(state);
 
-    // Store th startin position for error context
-    const char* start_pos = state->input;
+    // Store the startin position for error context
+    // const char* start_pos = state->input;
 
     switch (*state->input)
     {
