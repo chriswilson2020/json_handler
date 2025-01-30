@@ -110,6 +110,9 @@ char* json_write_string(const JsonValue* value);
 /* Validation function */
 int json_validate_strgin(const char* json_string);
 
+/* Error handling */
+const JsonError* json_get_last_error(void);
+
 /* Cleanup function */
 void json_free(JsonValue* value);
 

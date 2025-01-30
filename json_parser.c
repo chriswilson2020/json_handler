@@ -5,19 +5,47 @@
 /* parser state structure */
 typedef struct ParserState {
     const char* input; // Current position in input string
+    const char* input_start;
+    size_t input_length;
     size_t line;
     size_t column;
+    size_t nesting_level;
+    JsonError error;
 } ParserState;
 
+
+/* Global error state */
+static JsonError last_error;
+
+/* Get the last error that occured */
+const JsonError* json_get_last_error(void) {
+    return &last_error;
+}
 /* Initialise parse state */
 static ParserState parser_state_create(const char* input) {
     ParserState state = {
         .input = input,
+        .input_start = input,
+        .input_length = strlen(input),
         .line = 1,
         .column = 1,
+        .nesting_level = 0,
     };
+
+    /* Initialise error structure */
+    state.error.code = JSON_ERROR_NONE;
+    state.error.line = 0;
+    state.error.column = 0;
+    state.error.message[0] = '\0';
+    state.error.context[0] = '\0';
+
+    /* Reset global error state */
+    memcpy(&last_error, &state.error, sizeof(JsonError));
+
     return state;
 }
+
+/* Set error information*/
 
 /* Helper function to skup whitespace */
 static void skip_whitespace(ParserState* state) {
