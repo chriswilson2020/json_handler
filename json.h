@@ -34,6 +34,14 @@ typedef enum{
     JSON_ERROR_MAXIMUM_NESTING_REACHED
 } JsonErrorCode;
 
+typedef struct {
+    JsonErrorCode code;
+    size_t line;
+    size_t column;
+    char message[256];
+    char context[64];
+} JsonError;
+
 /* Forward declaration for object and array structures */
 struct JsonObject;
 struct JsonArray;
