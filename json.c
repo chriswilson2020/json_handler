@@ -1,5 +1,6 @@
 /* json.c */
 #include "json.h"
+#include <math.h>
 
 /* Helper function to create a new JsonValue */
 static JsonValue *json_value_init(void)
@@ -60,12 +61,15 @@ JsonValue *json_create_string(const char *string_value)
     return value;
 }
 
-JsonValue* json_create_array(void) {
-    JsonValue* value = json_value_init();
-    if (value) {
+JsonValue *json_create_array(void)
+{
+    JsonValue *value = json_value_init();
+    if (value)
+    {
         value->type = JSON_ARRAY;
-        value->value.array = (JsonArray*)malloc(sizeof(JsonArray));
-        if (!value->value.array) {
+        value->value.array = (JsonArray *)malloc(sizeof(JsonArray));
+        if (!value->value.array)
+        {
             free(value);
             return NULL;
         }
@@ -94,70 +98,88 @@ JsonValue *json_create_object(void)
     return value;
 }
 
-void json_print_value(const JsonValue* value, int indent_level) {
-    if (!value) {
+void json_print_value(const JsonValue *value, int indent_level)
+{
+    if (!value)
+    {
         printf("null");
         return;
     }
 
     /* Print indentation */
-    for (int i = 0; i < indent_level; i++) {
+    for (int i = 0; i < indent_level; i++)
+    {
         printf("  ");
     }
 
-    switch (value->type) {
-        case JSON_NULL:
-            printf("null");
-    /* Helper function to print JSON values (we'll implement this first) */
+    switch (value->type)
+    {
+    case JSON_NULL:
+        printf("null");
+        /* Helper function to print JSON values (we'll implement this first) */
         break;
 
-        case JSON_BOOLEAN:
-            printf("%s", value->value.boolean ? "true" : "false");
-            break;
+    case JSON_BOOLEAN:
+        printf("%s", value->value.boolean ? "true" : "false");
+        break;
 
-        case JSON_NUMBER:
-            printf("%.2f", value->value.number);
-            break;
+    case JSON_NUMBER:
+        if (fabs(value->value.number) < 0.0001 || fabs(value->value.number) > 100000.0)
+        {
+            printf("%e", value->value.number); // Use scientific notation for very small/large numbers
+        }
+        else
+        {
+            printf("%.6f", value->value.number); // Use more decimal places for regular numbers
+        }
+        break;
 
-        case JSON_STRING:
-            printf("\"%s\"", value->value.string);
-            break;
+    case JSON_STRING:
+        printf("\"%s\"", value->value.string);
+        break;
 
-        case JSON_ARRAY:
-            printf("[\n");
-            for (size_t i = 0; i < value->value.array->size; i++) {
-                json_print_value(value->value.array->items[i], indent_level + 1);
-                if (i < value->value.array->size - 1) {
-                    printf(",");
-                }
-                printf("\n");
+    case JSON_ARRAY:
+        printf("[\n");
+        for (size_t i = 0; i < value->value.array->size; i++)
+        {
+            json_print_value(value->value.array->items[i], indent_level + 1);
+            if (i < value->value.array->size - 1)
+            {
+                printf(",");
             }
-            for (int i = 0; i < indent_level; i++) {
+            printf("\n");
+        }
+        for (int i = 0; i < indent_level; i++)
+        {
+            printf("  ");
+        }
+        printf("]");
+        break;
+
+    case JSON_OBJECT:
+        printf("{\n");
+        JsonKeyValue *pair = value->value.object->pairs;
+        while (pair)
+        {
+            for (int i = 0; i < indent_level + 1; i++)
+            {
                 printf("  ");
             }
-            printf("]");
-            break;
-
-        case JSON_OBJECT:
-            printf("{\n");
-            JsonKeyValue* pair = value->value.object->pairs;
-            while (pair) {
-                for (int i = 0; i < indent_level + 1; i++) {
-                    printf("  ");
-                }
-                printf("\"%s\": ", pair->key);
-                json_print_value(pair->value, 0);
-                if (pair->next) {
-                    printf(",");
-                }
-                printf("\n");
-                pair = pair->next;
+            printf("\"%s\": ", pair->key);
+            json_print_value(pair->value, 0);
+            if (pair->next)
+            {
+                printf(",");
             }
-            for (int i = 0; i < indent_level; i++) {
-                printf("  ");
-            }
-            printf("}");
-            break;
+            printf("\n");
+            pair = pair->next;
+        }
+        for (int i = 0; i < indent_level; i++)
+        {
+            printf("  ");
+        }
+        printf("}");
+        break;
     }
 }
 
@@ -205,39 +227,46 @@ void json_free(JsonValue *value)
 }
 
 /* Array manipulation functions */
-int json_array_append(JsonValue* array_value, JsonValue* value) {
-    if (!array_value || array_value->type != JSON_ARRAY || !value) {
-        return 0;  // Error: invalid parameters
+int json_array_append(JsonValue *array_value, JsonValue *value)
+{
+    if (!array_value || array_value->type != JSON_ARRAY || !value)
+    {
+        return 0; // Error: invalid parameters
     }
 
-    JsonArray* array = array_value->value.array;
-    
+    JsonArray *array = array_value->value.array;
+
     /* Check if we need to resize the array */
-    if (array->size >= array->capacity) {
+    if (array->size >= array->capacity)
+    {
         size_t new_capacity = array->capacity == 0 ? 8 : array->capacity * 2;
-        JsonValue** new_items = (JsonValue**)realloc(array->items, 
-                                                    new_capacity * sizeof(JsonValue*));
-        if (!new_items) {
-            return 0;  // Error: memory allocation failed
+        JsonValue **new_items = (JsonValue **)realloc(array->items,
+                                                      new_capacity * sizeof(JsonValue *));
+        if (!new_items)
+        {
+            return 0; // Error: memory allocation failed
         }
-        
+
         array->items = new_items;
         array->capacity = new_capacity;
     }
-    
+
     /* Add the new value to the array */
     array->items[array->size++] = value;
-    return 1;  // Success
+    return 1; // Success
 }
 
-JsonValue* json_array_get(const JsonValue* array_value, size_t index) {
-    if (!array_value || array_value->type != JSON_ARRAY) {
-        return NULL;  // Error: invalid array
+JsonValue *json_array_get(const JsonValue *array_value, size_t index)
+{
+    if (!array_value || array_value->type != JSON_ARRAY)
+    {
+        return NULL; // Error: invalid array
     }
 
-    JsonArray* array = array_value->value.array;
-    if (!array || !array->items || index >= array->size) {
-        return NULL;  // Error: invalid array structure or index out of bounds
+    JsonArray *array = array_value->value.array;
+    if (!array || !array->items || index >= array->size)
+    {
+        return NULL; // Error: invalid array structure or index out of bounds
     }
 
     return array->items[index];

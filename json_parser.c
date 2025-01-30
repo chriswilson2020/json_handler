@@ -229,6 +229,29 @@ static JsonValue* parse_number(ParserState* state) {
     }
    }
 
+   // Handle scientific notation
+   if (*state->input == 'e' || *state->input == 'E') {
+    state->input++;
+    state->column++;
+
+    // Handle optionsl plus or minius sign in exponent
+    if (*state->input == '+' || *state->input == '-') {
+        state->input++;
+        state->column++;
+    }
+
+    // Must have at least one digit in exponent
+    if (!isdigit(*state->input)) {
+        set_parser_error(state, JSON_ERROR_INVALID_NUMBER, "Expected digit in exponent");
+        return NULL;
+    }
+    while (isdigit(*state->input)) {
+        state->input++;
+        state->column++;
+    }
+
+   }
+
    // Convert the accumulated string to a number
    char* number_str = (char*)malloc(state->input - start + 1);
    if (!number_str) {
@@ -284,17 +307,13 @@ static JsonValue* parse_array(ParserState* state) {
             return NULL;
         }
 
+         // The problem is likely here - we might be keeping a reference 
+        // to the element after appending it
         if (!json_array_append(array, element)) {
-            json_free(element);
+            set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION,
+                           "Failed to append element to array");
+            json_free(element);  // We might be double-freeing here
             json_free(array);
-            return NULL;
-        }
-
-        // Try to append the element to our array
-        if (!json_array_append(array, element)) {
-            set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to append element to array");
-            json_free(element); // Clean up the element we couldn't append
-            json_free(array); // Clean up the partial arrray
             return NULL;
         }
 

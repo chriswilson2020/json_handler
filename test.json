@@ -1,0 +1,10 @@
+{
+    "name": "Test File",
+    "description": "A test JSON file for our parser",
+    "numbers": [1, 2, 3, 4, 5],
+    "nested": {
+        "boolean": true,
+        "null_value": null,
+        "string": "Hello from file!"
+    }
+}
