@@ -253,12 +253,18 @@ static JsonValue* parse_number(ParserState* state) {
 
 /* Parse an array */
 static JsonValue* parse_array(ParserState* state) {
-    if (*state->input != '[') return NULL;
+    if (*state->input != '[') {
+        set_parser_error(state, JSON_ERROR_UNEXPECTED_CHAR, "Expected '[' at start of array");
+        return NULL;
+    }
     state->input++; // Skip opening bracket
     state->column++;
 
     JsonValue* array = json_create_array();
-    if (!array) return NULL;
+    if (!array) {
+        set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to create array");
+        return NULL;
+    }
 
     skip_whitespace(state);
 
@@ -284,34 +290,61 @@ static JsonValue* parse_array(ParserState* state) {
             return NULL;
         }
 
-        skip_whitespace(state);
-
-        if (*state->input == ']') {
-            state->input++;
-            state->column++;
-            return array;
+        // Try to append the element to our array
+        if (!json_array_append(array, element)) {
+            set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to append element to array");
+            json_free(element); // Clean up the element we couldn't append
+            json_free(array); // Clean up the partial arrray
+            return NULL;
         }
 
+        skip_whitespace(state);
+
+        // Check for end of array
+
+        if (*state->input == ']') {
+            state->input++; // move past closing bracket
+            state->column++;
+            return array; //  Successfully parsed array
+        }
+
+        // If not the end we must see a comma
         if (*state->input != ',') {
+            set_parser_error(state, JSON_ERROR_EXPECTED_COMMA_OR_BRACKET, "Expected ',' or ']' after array element");
             json_free(array);
             return NULL;
         }
 
         state->input++; // Skip comma
         state->column++;
+
         skip_whitespace(state);
+
+        // Check for trailing comma (not allowed in JSON)
+        if (*state->input == ']') {
+            set_parser_error(state, JSON_ERROR_UNEXPECTED_CHAR, "Trailing comma not allowed in array");
+            json_free(array);
+            return NULL;
+        }
     }
     
 }
 
 /* Parse an object */
 static JsonValue* parse_object(ParserState* state) {
-    if (*state->input != '{') return NULL;
+    if (*state->input != '{') {
+        set_parser_error(state, JSON_ERROR_UNEXPECTED_CHAR, "Expected '{' at start of object");
+        return NULL;
+    }
+
     state->input++;
     state->column++;
 
     JsonValue* object = json_create_object();
-    if (!object) return NULL;
+    if (!object) {
+        set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failes to create object");
+        return NULL;
+    }
 
     skip_whitespace(state);
 
@@ -322,8 +355,10 @@ static JsonValue* parse_object(ParserState* state) {
         return object;
     }
 
+    // Parse object members
     while (1) {
-        skip_whitespace(state);
+        // Each key must be a string
+        skip_whitespace(state); // I think this is redundant TODO:
         
         // Parse key (must be a string)
         JsonValue* key_value = parse_string(state);
@@ -332,17 +367,26 @@ static JsonValue* parse_object(ParserState* state) {
             return NULL;
         }
 
+        // Make a copy of the key string
         char* key = strdup(key_value->value.string);
-        json_free(key_value);
+        json_free(key_value); // We don't need the JsonValue wrapper anymore
+
+        if (!key) {
+            set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to allocate memory for object key");
+            json_free(object);
+            return NULL;
+        }
 
         skip_whitespace(state);
 
         // Expect colon
         if (*state->input != ':') {
+            set_parser_error(state, JSON_ERROR_EXPECTED_COLON, "Expected ':' after object key");
             free(key);
             json_free(object);
             return NULL;
         }
+
         state->input++; //skip colon
         state->column++;
 
@@ -358,6 +402,7 @@ static JsonValue* parse_object(ParserState* state) {
 
         // Add key-value pair to object
         if (!json_object_set(object, key, value)) {
+            set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to add key-value pair to object");
             free(key);
             json_free(value);
             json_free(object);
@@ -367,6 +412,7 @@ static JsonValue* parse_object(ParserState* state) {
         free(key);
         skip_whitespace(state);
 
+        // Check for the end of object
         if (*state->input == '}') {
             state->input++;
             state->column++;
@@ -374,12 +420,23 @@ static JsonValue* parse_object(ParserState* state) {
         }
 
         if (*state->input != ',') {
+            set_parser_error(state, JSON_ERROR_EXPECTED_COMMA_OR_BRACE, "Expected ',' or '}' after object value");
             json_free(object);
             return NULL;
         }
 
         state->input++;
         state->column++;
+
+        // skip whitespace after comma
+        skip_whitespace(state);
+
+        // Check for trailing comma (not allowed in JSON)
+        if (*state->input == '}') {
+            set_parser_error(state, JSON_ERROR_UNEXPECTED_CHAR, "Expected string after comma, got '}'");
+            json_free(object);
+            return NULL;
+        }
     }
 }
 
@@ -387,30 +444,53 @@ static JsonValue* parse_object(ParserState* state) {
 static JsonValue* parse_value(ParserState* state) {
     skip_whitespace(state);
 
+    // Store th startin position for error context
+    const char* start_pos = state->input;
+
     switch (*state->input)
     {
     case 'n':   // null
         if (strncmp(state->input, "null", 4) == 0) {
             state->input += 4;
             state->column += 4;
-            return json_create_null();
+            JsonValue* value = json_create_null();
+            if (!value) {
+                set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to create null value");
+                return NULL;
+            }
+            return value;
         }
+
+        // If we see 'n' but not "null", its an invalid token
+        set_parser_error(state, JSON_ERROR_INVALID_VALUE, "Invalid token: expected 'null'");
         return NULL;
 
     case 't': // true
         if (strncmp(state->input, "true", 4) == 0) {
             state->input += 4;
             state->column += 4;
-            return json_create_boolean(1);
+            JsonValue* value = json_create_boolean(1);
+            if (!value) {
+                set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to create boolean value");
+                return NULL;
+            }
+            return value;
         }
+        set_parser_error(state, JSON_ERROR_INVALID_VALUE, "Invalid token: expected 'true'");
         return NULL;
     
     case 'f': // false
         if (strncmp(state->input, "false", 5) == 0) {
             state->input += 5;
             state->column += 5;
-            return json_create_boolean(0);
+            JsonValue* value = json_create_boolean(0);
+            if (!value) {
+                set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to create boolean value");
+                return NULL;
+            }
+            return value;
         }
+        set_parser_error(state, JSON_ERROR_INVALID_VALUE, "Invalid token: expected 'false'");
         return NULL;
 
     case '"':
@@ -434,22 +514,52 @@ static JsonValue* parse_value(ParserState* state) {
     case '8':
     case '9':
         return parse_number(state);
-
+    case '\0': // End of input
+        set_parser_error(state, JSON_ERROR_UNEXPECTED_CHAR, "Unexpected end of input");
+        return NULL;
 
     default:
-        return NULL;
+        {
+            char message[100];
+            if (isprint(*state->input)) {
+                snprintf(message, sizeof(message), "Unexpected character '%c' at start of value", *state->input);
+            } else {
+                snprintf(message, sizeof(message), "Unexpected character (code: %d) at start of value", (unsigned char)*state->input);
+            }
+            set_parser_error(state, JSON_ERROR_INVALID_VALUE, message);
+            return NULL;
+        }
     }
 }
 
 /* Public parsing functions */
 JsonValue* json_parse_string(const char* json_string) {
-    if (!json_string) return NULL;
+    // First, validate our input
+    if (!json_string) {
+        // For public functions, we update the global error state directly
+        last_error.code = JSON_ERROR_INVALID_VALUE;
+        strcpy(last_error.message, "In put string is NULL");
+        last_error.line = 0;
+        last_error.column = 0;
+        return NULL;
+    }
 
+    // Initialise the parser state
     ParserState state = parser_state_create(json_string);
-    JsonValue* value = parse_value(&state);
 
+    // Parst the root value
+    JsonValue* value = parse_value(&state);
+    if (!value) {
+        // parse_value will have already set the error state
+        return NULL;
+    }
+
+    // If we parse a valid value, we should ony see whitespace
     skip_whitespace(&state);
+
+
     if (*state.input != '\0') {
+        set_parser_error(&state, JSON_ERROR_UNEXPECTED_CHAR, "Unexpected content after JSON value");
         // Extra characters after valid JSON
         json_free(value);
         return NULL;
@@ -459,18 +569,55 @@ JsonValue* json_parse_string(const char* json_string) {
 }
 
 JsonValue* json_parse_file(const char* filename) {
+    // Validate input filename
+    if (!filename) {
+        last_error.code = JSON_ERROR_INVALID_VALUE;
+        strcpy(last_error.message, "Filename is NULL");
+        last_error.line = 0;
+        last_error.column = 0;
+        return NULL;
+    }
+
+    // Open the file
     FILE* file = fopen(filename, "r");
-    if (!file) return NULL;
+    if (!file) {
+        last_error.code = JSON_ERROR_INVALID_VALUE;
+        snprintf(last_error.message, sizeof(last_error.message), "Could not open file: %s", filename);
+        last_error.line = 0;
+        last_error.column = 0;
+        return NULL;
+    }
 
     // Get file size
-    fseek(file, 0, SEEK_END);
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        last_error.code = JSON_ERROR_INVALID_VALUE;
+        strcpy(last_error.message, "Could not determine file size");
+        return NULL;
+    }
+
     long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    if (size < 0) {
+        fclose(file);
+        last_error.code = JSON_ERROR_INVALID_VALUE;
+        strcpy(last_error.message, "Could not determine file size");
+        return NULL;
+    }
+
+    // Return to start of file
+    if (fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        last_error.code = JSON_ERROR_INVALID_VALUE;
+        strcpy(last_error.message, "Could not read file");
+        return NULL;
+    }
 
     // Allocate buffer
     char* buffer = (char*)malloc(size + 1);
     if (!buffer) {
         fclose(file);
+        last_error.code = JSON_ERROR_MEMORY_ALLOCATION;
+        strcpy(last_error.message, "Could not allocate memore for file contents");
         return NULL;
     }
 
@@ -480,6 +627,8 @@ JsonValue* json_parse_file(const char* filename) {
 
     if (read_size != (size_t)size) {
         free(buffer);
+        last_error.code = JSON_ERROR_INVALID_VALUE;
+        strcpy(last_error.message, "Could not read entire file");
         return NULL;
     }
 
