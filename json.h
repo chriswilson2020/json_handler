@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define JSON_MAX_NESTING_DEPTH 32
+
 /* JSON value types */
 typedef enum {
     JSON_NULL,

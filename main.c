@@ -25,6 +25,28 @@ static void run_test(const char* test_name, const char* json_input) {
     }
 }
 
+/* Helper function to generate deeply nested JSON */
+static char* generate_nested_json(int depth) {
+    /* Calculate required buffer size: 
+       2 chars per level for brackets [] plus 1 for null terminator */
+    size_t size = (depth * 2) + 1;
+    char* json = (char*)malloc(size);
+    if (!json) return NULL;
+    
+    /* Fill with opening brackets */
+    for (int i = 0; i < depth; i++) {
+        json[i] = '[';
+    }
+    
+    /* Fill with closing brackets */
+    for (int i = 0; i < depth; i++) {
+        json[depth + i] = ']';
+    }
+    
+    json[size - 1] = '\0';
+    return json;
+}
+
 int main() {
 
     printf("Testing JSON Library Implementation\n");
@@ -83,6 +105,14 @@ int main() {
     printf("Updated age: ");
     json_print_value(json_object_get(person, "age"), 0);
     printf("\n\n");
+
+    /* Test 4: Test Nesting Depth */
+    printf("\nTesting maximum nesting depth:\n");
+    char* deep_json = generate_nested_json(JSON_MAX_NESTING_DEPTH + 1);
+    if (deep_json) {
+        run_test("Error - Excessive Nesting", deep_json);
+        free(deep_json);
+    }
 
     /* Clean up */
     json_free(person); // This will recursively free all nested objects and arrays

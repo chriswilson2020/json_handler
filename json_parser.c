@@ -280,6 +280,14 @@ static JsonValue* parse_array(ParserState* state) {
         set_parser_error(state, JSON_ERROR_UNEXPECTED_CHAR, "Expected '[' at start of array");
         return NULL;
     }
+
+    /* Check nesting level before proceeding */
+    if (state->nesting_level >= JSON_MAX_NESTING_DEPTH) {
+        set_parser_error(state, JSON_ERROR_MAXIMUM_NESTING_REACHED, "Maximum nesting depth exceeded");
+        return NULL;
+    }
+
+    state->nesting_level++;
     state->input++; // Skip opening bracket
     state->column++;
 
@@ -295,6 +303,7 @@ static JsonValue* parse_array(ParserState* state) {
     if (*state->input == ']') {
         state->input++;
         state->column++;
+        state->nesting_level--; // Decrement nesting level
         return array;
     }
 
@@ -303,6 +312,7 @@ static JsonValue* parse_array(ParserState* state) {
     {
         JsonValue* element = parse_value(state);
         if (!element) {
+            state->nesting_level--; // Decrement on error
             json_free(array);
             return NULL;
         }
@@ -324,11 +334,13 @@ static JsonValue* parse_array(ParserState* state) {
         if (*state->input == ']') {
             state->input++; // move past closing bracket
             state->column++;
+            state->nesting_level--;
             return array; //  Successfully parsed array
         }
 
         // If not the end we must see a comma
         if (*state->input != ',') {
+            state->nesting_level--;
             set_parser_error(state, JSON_ERROR_EXPECTED_COMMA_OR_BRACKET, "Expected ',' or ']' after array element");
             json_free(array);
             return NULL;
@@ -341,6 +353,7 @@ static JsonValue* parse_array(ParserState* state) {
 
         // Check for trailing comma (not allowed in JSON)
         if (*state->input == ']') {
+            state->nesting_level--;
             set_parser_error(state, JSON_ERROR_UNEXPECTED_CHAR, "Trailing comma not allowed in array");
             json_free(array);
             return NULL;
@@ -356,11 +369,19 @@ static JsonValue* parse_object(ParserState* state) {
         return NULL;
     }
 
+    /* Check nesting level befor proceeding */
+    if (state->nesting_level >= JSON_MAX_NESTING_DEPTH) {
+        set_parser_error(state, JSON_ERROR_MAXIMUM_NESTING_REACHED, "Maximum nesting depth exceeded");
+        return NULL;
+    }
+
+    state->nesting_level++;
     state->input++;
     state->column++;
 
     JsonValue* object = json_create_object();
     if (!object) {
+        state->nesting_level--;
         set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failes to create object");
         return NULL;
     }
