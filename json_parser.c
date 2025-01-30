@@ -45,7 +45,45 @@ static ParserState parser_state_create(const char* input) {
     return state;
 }
 
-/* Set error information*/
+/* Set error information and update global error state */
+static void set_parser_error(ParserState* state, JsonErrorCode code, const char* message) {
+    if (state->error.code != JSON_ERROR_NONE) {
+        return; /* Only record the first error */
+    }
+
+    state->error.code = code;
+    state->error.line = state->line;
+    state->error.column = state->column;
+    strncpy(state->error.message, message, sizeof(state->error.message) -1);
+
+    /* Capture context around the error location */
+    const char* context_start = state->input - 20;
+    if (context_start < state->input_start) {
+        context_start = state->input_start;
+    }
+
+    size_t context_length = 40;
+    if (context_start + context_length > state->input_start + state->input_length) {
+        context_length = (state->input_start + state->input_length) - context_start;
+    }
+
+    /* copy context with ellipsis */
+    size_t prefix_len = 0;
+    if (context_start > state->input_start) {
+        strcpy(state->error.context, "...");
+        prefix_len = 3;
+    }
+
+    strncpy(state->error.context + prefix_len, context_start, sizeof(state->error.context) - prefix_len - 4);
+
+    if (context_start + context_length < state->input_start + state->input_length) {
+        strcat(state->error.context, "...");
+    }
+
+    /* Update global error state */
+    memcpy(&last_error, &state->error, sizeof(JsonError));
+
+}
 
 /* Helper function to skup whitespace */
 static void skip_whitespace(ParserState* state) {
@@ -69,32 +107,50 @@ static JsonValue* parse_object(ParserState* state);
 
 /* Parse a string value */
 static JsonValue* parse_string(ParserState* state) {
-    if (*state->input != '"') return NULL;
+    if (*state->input != '"') {
+        set_parser_error(state, JSON_ERROR_UNEXPECTED_CHAR, "Exoected '\"' at start of string");
+        return NULL;
+    }
     state->input++; // Skip opening quote
     state->column++;
 
     //First pass: count length and validate
     const char* start = state->input;
     size_t length = 0;
+
     while (*state->input && *state->input != '"')
     {
         // Handle escape sequences
         if (*state->input == '\\') {
             state->input++;
             state->column++;
-            if (!*state->input) return NULL; // unexpected end
-            // TODO: Add proper escape sequence handling
+            if (!*state->input) {
+                set_parser_error(state, JSON_ERROR_UNTERMINATED_STRING, "Unexpected end of input after escape character");
+                return NULL; // unexpected end
+            }
+            /* For now, just skip the escaped character */
+            /* TODO: Validate escape sequences*/
+        } else if ((unsigned char)*state->input < 0x20) {
+            set_parser_error(state, JSON_ERROR_INVALID_STRING_CHAR, "Invalid control character in string");
+            return NULL;
         }
+
         state->input++;
         state->column++;
         length++;
     }
 
-    if (*state->input != '"') return NULL; // Unterminate string
+    if (*state->input != '"') {
+        set_parser_error(state, JSON_ERROR_UNTERMINATED_STRING, "Unterminated string");
+        return NULL;
+    } // Unterminate string
 
     // Allocate and copy string
     char* str = (char*)malloc(length + 1);
-    if (!str) return NULL;
+    if (!str) {
+        set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to allocate memory string");
+        return NULL;
+    }
 
 
     // Second pass: copy characters
@@ -116,6 +172,12 @@ static JsonValue* parse_string(ParserState* state) {
     state->column++;
 
     JsonValue* value = json_create_string(str);
+    if (!value) {
+        set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to create JSON string value");
+        free(str);
+        return NULL;
+    }
+
     free(str); // json_create_string makes its own copy
     return value;
 
@@ -123,15 +185,70 @@ static JsonValue* parse_string(ParserState* state) {
 
 /* Parse a number value */
 static JsonValue* parse_number(ParserState* state) {
-    char* endptr;
-    double number = strtod(state->input, &endptr);
+   const char* start = state->input;
 
-    if (endptr == state->input) return NULL;
+   // Handle negative numbers 
+   if (*state->input == '-') {
+    state->input++;
+    state->column++;
+    if (!isdigit(*state->input)) {
+        set_parser_error(state, JSON_ERROR_INVALID_NUMBER, "Expected a digit after minus sign");
+        return NULL;
+    }
+   }
 
-    state->column += (endptr - state->input);
-    state->input = endptr;
+   // Parst integer part
+   if (*state->input == '0') {
+    state->input++;
+    state->column++;
+    if (isdigit(*state->input)) {
+        set_parser_error(state, JSON_ERROR_INVALID_NUMBER, "Leading zeros are not allowed");
+        return NULL;
+    }
+   } else if (isdigit(*state->input)) {
+        while(isdigit(*state->input)) {
+            state->input++;
+            state->column++;
+        }
+   } else {
+        set_parser_error(state, JSON_ERROR_INVALID_NUMBER, "Expected a digit");
+        return NULL;
+   }
 
-    return json_create_number(number);
+   // Parse fractional input
+   if (*state->input == '.') {
+    state->input++;
+    state->column++;
+    if (!isdigit(*state->input)) {
+        set_parser_error(state, JSON_ERROR_INVALID_NUMBER, "Expected digit after decimal point");
+        return NULL;
+    }
+    while (isdigit(*state->input)) {
+        state->input++;
+        state->column++;
+    }
+   }
+
+   // Convert the accumulated string to a number
+   char* number_str = (char*)malloc(state->input - start + 1);
+   if (!number_str) {
+    set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to allocate memory for number conversion");
+    return NULL;
+   }
+
+   strncpy(number_str, start, state->input - start);
+   number_str[state->input - start] = '\0';
+  
+    double number = atof(number_str);
+    free(number_str);
+
+   JsonValue* value = json_create_number(number);
+   if (!value) {
+    set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to create JSON number value");
+    return NULL;
+   }
+
+   return value;
 }
 
 /* Parse an array */
