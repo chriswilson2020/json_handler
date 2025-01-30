@@ -13,6 +13,15 @@ typedef struct ParserState {
     JsonError error;
 } ParserState;
 
+/* Convert a hex character to its integer value */
+static int hex_char_to_int(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+
 
 /* Global error state */
 static JsonError last_error;
@@ -105,6 +114,126 @@ static JsonValue* parse_number(ParserState* state);
 static JsonValue* parse_array(ParserState* state);
 static JsonValue* parse_object(ParserState* state);
 
+/* Convert a 4-digit hex sequence to a Unicode code point */
+static int parse_unicode_escape(ParserState* state, uint32_t* code_point) {
+    uint32_t value = 0;
+    for (int i = 0; i < 4; i++) {
+        char c = state->input[i];
+        int hex = hex_char_to_int(c);
+        if (hex == -1) {
+            char message[100];
+            snprintf(message, sizeof(message), 
+                    "Invalid hex digit '%c' in Unicode escape sequence", c);
+            set_parser_error(state, JSON_ERROR_INVALID_UNICODE, message);
+            return 0;
+        }
+        value = (value << 4) | hex;
+    }
+    *code_point = value;
+    return 1;
+}
+
+/* Convert a Unicode code point to UTF-8 bytes */
+static size_t unicode_to_utf8(uint32_t code_point, char* output) {
+    if (code_point <= 0x7F) {
+        output[0] = (char)code_point;
+        return 1;
+    } else if (code_point <= 0x7FF) {
+        output[0] = (char)(0xC0 | (code_point >> 6));
+        output[1] = (char)(0x80 | (code_point & 0x3F));
+        return 2;
+    } else if (code_point <= 0xFFFF) {
+        output[0] = (char)(0xE0 | (code_point >> 12));
+        output[1] = (char)(0x80 | ((code_point >> 6) & 0x3F));
+        output[2] = (char)(0x80 | (code_point & 0x3F));
+        return 3;
+    } else if (code_point <= 0x10FFFF) {
+        output[0] = (char)(0xF0 | (code_point >> 18));
+        output[1] = (char)(0x80 | ((code_point >> 12) & 0x3F));
+        output[2] = (char)(0x80 | ((code_point >> 6) & 0x3F));
+        output[3] = (char)(0x80 | (code_point & 0x3F));
+        return 4;
+    }
+    return 0; // Invalid code point
+}
+
+/* Process an escape sequence and write the result to the output buffer */
+static size_t process_escape_sequence(ParserState* state, char* output) {
+    char c = *state->input;
+    state->input++;
+    state->column++;
+
+    switch (c) {
+        case '"':  output[0] = '"';  return 1;
+        case '\\': output[0] = '\\'; return 1;
+        case '/':  output[0] = '/';  return 1;
+        case 'b':  output[0] = '\b'; return 1;
+        case 'f':  output[0] = '\f'; return 1;
+        case 'n':  output[0] = '\n'; return 1;
+        case 'r':  output[0] = '\r'; return 1;
+        case 't':  output[0] = '\t'; return 1;
+        case 'u': {
+            uint32_t code_point;
+            if (!parse_unicode_escape(state, &code_point)) {
+                return 0;
+            }
+            
+            /* Handle UTF-16 surrogate pairs */
+            if (code_point >= 0xD800 && code_point <= 0xDBFF) {
+                /* This is a high surrogate, must be followed by low surrogate */
+                state->input += 4; /* Skip the 4 hex digits we just read */
+                state->column += 4;
+                
+                if (state->input[0] != '\\' || state->input[1] != 'u') {
+                    set_parser_error(state, JSON_ERROR_INVALID_UNICODE,
+                                   "High surrogate must be followed by low surrogate");
+                    return 0;
+                }
+                
+                state->input += 2; /* Skip the \u */
+                state->column += 2;
+                
+                uint32_t low_surrogate;
+                if (!parse_unicode_escape(state, &low_surrogate)) {
+                    return 0;
+                }
+                
+                if (low_surrogate < 0xDC00 || low_surrogate > 0xDFFF) {
+                    set_parser_error(state, JSON_ERROR_INVALID_UNICODE,
+                                   "Invalid low surrogate");
+                    return 0;
+                }
+                
+                /* Calculate the final Unicode code point */
+                code_point = 0x10000 + (((code_point - 0xD800) << 10) |
+                                      (low_surrogate - 0xDC00));
+                state->input += 4;
+                state->column += 4;
+            }
+            else if (code_point >= 0xDC00 && code_point <= 0xDFFF) {
+                set_parser_error(state, JSON_ERROR_INVALID_UNICODE,
+                               "Unexpected low surrogate");
+                return 0;
+            }
+            
+            size_t utf8_len = unicode_to_utf8(code_point, output);
+            if (utf8_len == 0) {
+                set_parser_error(state, JSON_ERROR_INVALID_UNICODE,
+                               "Invalid Unicode code point");
+                return 0;
+            }
+            return utf8_len;
+        }
+        default: {
+            char message[100];
+            snprintf(message, sizeof(message),
+                    "Invalid escape sequence '\\%c'", c);
+            set_parser_error(state, JSON_ERROR_INVALID_ESCAPE_SEQUENCE, message);
+            return 0;
+        }
+    }
+}
+
 /* Parse a string value */
 static JsonValue* parse_string(ParserState* state) {
     if (*state->input != '"') {
@@ -113,74 +242,77 @@ static JsonValue* parse_string(ParserState* state) {
     }
     state->input++; // Skip opening quote
     state->column++;
-
-    //First pass: count length and validate
-    const char* start = state->input;
-    size_t length = 0;
-
-    while (*state->input && *state->input != '"')
-    {
-        // Handle escape sequences
-        if (*state->input == '\\') {
-            state->input++;
-            state->column++;
-            if (!*state->input) {
-                set_parser_error(state, JSON_ERROR_UNTERMINATED_STRING, "Unexpected end of input after escape character");
-                return NULL; // unexpected end
+/* First pass: count the maximum possible length needed */
+    const char* scan = state->input;
+    size_t max_length = 0;
+    
+    while (*scan && *scan != '"') {
+        if (*scan == '\\') {
+            scan++;
+            if (!*scan) break;
+            if (*scan == 'u') {
+                /* Unicode escapes can expand to up to 4 bytes in UTF-8 */
+                max_length += 4;
+                scan += 4; /* Skip the 4 hex digits */
+            } else {
+                max_length++;
             }
-            /* For now, just skip the escaped character */
-            /* TODO: Validate escape sequences*/
-        } else if ((unsigned char)*state->input < 0x20) {
-            set_parser_error(state, JSON_ERROR_INVALID_STRING_CHAR, "Invalid control character in string");
+        } else if ((unsigned char)*scan < 0x20) {
+            set_parser_error(state, JSON_ERROR_INVALID_STRING_CHAR,
+                           "Invalid control character in string");
             return NULL;
-        }
-
-        state->input++;
-        state->column++;
-        length++;
-    }
-
-    if (*state->input != '"') {
-        set_parser_error(state, JSON_ERROR_UNTERMINATED_STRING, "Unterminated string");
-        return NULL;
-    } // Unterminate string
-
-    // Allocate and copy string
-    char* str = (char*)malloc(length + 1);
-    if (!str) {
-        set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to allocate memory string");
-        return NULL;
-    }
-
-
-    // Second pass: copy characters
-    const char* src = start;
-    char* dst = str;
-    while (src < state->input) {
-        if (*src == '\\') {
-            src++;
-            // TODO handle escape sequences properly
-            *dst++ = *src++;
         } else {
-            *dst++ = *src++;
+            max_length++;
+        }
+        scan++;
+    }
+    
+    if (*scan != '"') {
+        set_parser_error(state, JSON_ERROR_UNTERMINATED_STRING,
+                        "Unterminated string");
+        return NULL;
+    }
+    
+    /* Allocate buffer for the string */
+    char* str = (char*)malloc(max_length + 1);
+    if (!str) {
+        set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION,
+                        "Failed to allocate memory for string");
+        return NULL;
+    }
+    
+    /* Second pass: process the string and handle escapes */
+    size_t pos = 0;
+    while (*state->input != '"') {
+        if (*state->input == '\\') {
+            state->input++; /* Skip the backslash */
+            state->column++;
+            size_t escape_len = process_escape_sequence(state, &str[pos]);
+            if (escape_len == 0) {
+                free(str);
+                return NULL;
+            }
+            pos += escape_len;
+        } else {
+            str[pos++] = *state->input++;
+            state->column++;
         }
     }
     
-    *dst = '\0';
-
-    state->input++; // Skip closing quote
+    str[pos] = '\0';
+    state->input++; /* Skip closing quote */
     state->column++;
-
+    
     JsonValue* value = json_create_string(str);
     if (!value) {
-        set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION, "Failed to create JSON string value");
+        set_parser_error(state, JSON_ERROR_MEMORY_ALLOCATION,
+                        "Failed to create JSON string value");
         free(str);
         return NULL;
     }
-
-    free(str); // json_create_string makes its own copy
+    
+    free(str); /* json_create_string makes its own copy */
     return value;
-
 }
 
 /* Parse a number value */

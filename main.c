@@ -157,6 +157,19 @@ int main() {
              "{\"name\":\"John\",\"age\":30,\"isStudent\":false,"
              "\"grades\":[85,92,78],\"address\":{\"street\":\"123 Main St\","
              "\"city\":\"Springfield\"}}");
+
+    /* String escape sequence tests */
+    run_test("String - Basic Escapes", 
+         "\"\\\"Hello\\nWorld\\\"\"");  // "Hello\nWorld"
+
+    run_test("String - All Escapes",
+         "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
+
+    run_test("String - Basic Unicode",
+         "\"Hello \\u0057orld\"");  // "Hello World"
+
+    run_test("String - Unicode Surrogate Pair",
+         "\"\\uD83D\\uDE00\"");  // 😀 (smiling face emoji)
     
     /* Error Cases */
     run_test("Error - Invalid Number", "01234");
@@ -185,6 +198,24 @@ int main() {
     /* Whitespace Handling */
     run_test("Whitespace - Mixed", " { \"key\" : [ 1 , 2 , 3 ] } ");
     run_test("Whitespace - Newlines", "{\n\"key\"\n:\n[\n1\n,\n2\n]\n}");
+
+    run_test("Error - Invalid Escape",
+         "\"\\x\"");  // \x is not a valid escape
+
+    run_test("Error - Incomplete Unicode",
+         "\"\\u12\"");  // Need 4 hex digits
+
+    run_test("Error - Invalid Unicode",
+         "\"\\uzzzz\"");  // Invalid hex digits
+
+    run_test("Error - Incomplete Surrogate Pair",
+         "\"\\uD83D\"");  // High surrogate without low surrogate
+
+    run_test("Error - Invalid Surrogate Pair",
+         "\"\\uD83D\\u0057\"");  // High surrogate followed by non-surrogate
+
+    run_test("Error - Lone Low Surrogate",
+         "\"\\uDE00\"");  // Low surrogate without high surrogate
 
     /* File Parsing Test */
     printf("\nTesting file parsing:\n");
