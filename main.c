@@ -1,9 +1,73 @@
 #include <stdio.h>
 #include "json.h"
 
-/* test_json_parser.c */
-#include "json.h"
-#include <stdio.h>
+void test_formatting_options(void) {
+    printf("\nTesting JSON Formatting Options\n");
+    printf("==============================\n\n");
+
+    /* Create a complex test object */
+    JsonValue* obj = json_create_object();
+    json_object_set(obj, "string", json_create_string("Hello\nWorld"));
+    json_object_set(obj, "number", json_create_number(123.456));
+    
+    JsonValue* array = json_create_array();
+    json_array_append(array, json_create_number(1));
+    json_array_append(array, json_create_number(2));
+    json_array_append(array, json_create_number(3));
+    json_object_set(obj, "array", array);
+    
+    JsonValue* nested = json_create_object();
+    json_object_set(nested, "a", json_create_string("value"));
+    json_object_set(nested, "b", json_create_boolean(1));
+    json_object_set(obj, "nested", nested);
+
+    /* Test default formatting */
+    printf("Default formatting:\n");
+    char* default_output = json_format_string(obj, &JSON_FORMAT_DEFAULT);
+    printf("%s\n", default_output);
+    free(default_output);
+
+    /* Test compact formatting */
+    printf("\nCompact formatting:\n");
+    char* compact_output = json_format_string(obj, &JSON_FORMAT_COMPACT);
+    printf("%s\n", compact_output);
+    free(compact_output);
+
+    /* Test pretty formatting */
+    printf("\nPretty formatting:\n");
+    char* pretty_output = json_format_string(obj, &JSON_FORMAT_PRETTY);
+    printf("%s\n", pretty_output);
+    free(pretty_output);
+
+    /* Test custom formatting */
+    JsonFormatConfig custom_config = {
+        .indent_string = "\t",           /* Use tabs */
+        .line_end = "\n",
+        .spaces_after_colon = 2,         /* Extra spacing after colons */
+        .spaces_after_comma = 2,         /* Extra spacing after commas */
+        .max_inline_length = 40,         /* Short lines */
+        .number_format = JSON_NUMBER_FORMAT_SCIENTIFIC,
+        .precision = 3,                  /* 3 decimal places */
+        .inline_simple_arrays = 0,       /* Always break arrays */
+        .sort_object_keys = 1            /* Sort keys */
+    };
+
+    printf("\nCustom formatting:\n");
+    char* custom_output = json_format_string(obj, &custom_config);
+    printf("%s\n", custom_output);
+    free(custom_output);
+
+    /* Test file output */
+    printf("\nTesting file output... ");
+    if (json_format_file(obj, "test_output.json", &JSON_FORMAT_PRETTY)) {
+        printf("Success!\n");
+    } else {
+        printf("Failed!\n");
+    }
+
+    /* Clean up */
+    json_free(obj);
+}
 
 /* Helper function to run a test and report results */
 static void run_test(const char* test_name, const char* json_input) {
@@ -231,6 +295,11 @@ int main() {
     }
 
     printf("\nAll tests completed!\n");
+
+    printf("=== Pretty Print Formating tests ===");
+      /* Run formatting tests */
+    test_formatting_options();
+    
     return 0;
 
 }

@@ -36,6 +36,31 @@ typedef enum{
     JSON_ERROR_MAXIMUM_NESTING_REACHED
 } JsonErrorCode;
 
+typedef enum {
+    JSON_NUMBER_FORMAT_DECIMAL,     /* Regular decimal format (e.g., 123.456) */
+    JSON_NUMBER_FORMAT_SCIENTIFIC,  /* Scientific notation (e.g., 1.23e+2) */
+    JSON_NUMBER_FORMAT_AUTO        /* Automatically choose based on magnitude */
+} JsonNumberFormat;
+
+typedef struct JsonFormatConfig {
+    const char* indent_string;      /* String to use for each indent level (e.g., " " or "\t")*/
+    const char* line_end;           /* String to use for line endings (e.g., "\n") */
+    int spaces_after_colon;         /* Number of spaces after colons in objecta */
+    int spaces_after_comma;         /* NUmber of spaces after commas */
+    int max_inline_length;          /* Maximum length for inline arrays/objects before breaking */
+    JsonNumberFormat number_format; /* How to format numbers */
+    int precision;                  /* Number of decimal places for flaoting point */
+    int inline_simple_arrays;       /* Whether to keep simple arrays on one line */
+    int sort_object_keys;           /* Whether to sort object keys alphabetically */
+} JsonFormatConfig;
+
+/* Default format configuration */
+extern const JsonFormatConfig JSON_FORMAT_DEFAULT;
+/* Compact format (minimal whitespace) */
+extern const JsonFormatConfig JSON_FORMAT_COMPACT;
+/* Pretty format (readable indentation) */
+extern const JsonFormatConfig JSON_FORMAT_PRETTY;
+
 typedef struct {
     JsonErrorCode code;
     size_t line;
@@ -104,6 +129,10 @@ JsonValue* json_object_get(const JsonValue* object, const char* key);
 /* Parsing functions */
 JsonValue* json_parse_file(const char* filename);
 JsonValue* json_parse_string(const char* json_string);
+
+/* Pretty Print functions */
+char* json_format_string(const JsonValue* value, const JsonFormatConfig* config);
+int json_format_file(const JsonValue* value, const char* filename, const JsonFormatConfig* config);
 
 /* Writing functions */
 int json_write_file(const JsonValue* value, const char* filename);
