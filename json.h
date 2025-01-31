@@ -79,6 +79,9 @@ typedef struct {
 struct JsonObject;
 struct JsonArray;
 
+const JsonError* json_get_last_error(void);      /* For parser errors */
+const JsonError* json_get_validation_error(void); /* For validation errors */
+
 /* Main JSON value structure */
 typedef struct JsonValue {
     JsonType type;
@@ -146,6 +149,7 @@ char* json_write_string(const JsonValue* value);
 
 /* Validation function */
 int json_validate_string(const char* json_string);
+int json_validate_file(const char* filename);
 
 /* Error handling */
 const JsonError* json_get_last_error(void);
