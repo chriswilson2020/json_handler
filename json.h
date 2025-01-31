@@ -35,6 +35,11 @@ typedef enum{
     JSON_ERROR_MEMORY_ALLOCATION,
     JSON_ERROR_MAXIMUM_NESTING_REACHED,
     JSON_ERROR_FORMAT_ERROR,
+    JSON_ERROR_FORMAT_BUFFER_OVERFLOW,
+    JSON_ERROR_FORMAT_MEMORY_ALLOCATION,
+    JSON_ERROR_FORMAT_INVALID_CONFIG,
+    JSON_ERROR_FORMAT_FILE_WRITE,
+    JSON_ERROR_FORMAT_NULL_INPUT,
 } JsonErrorCode;
 
 typedef enum {
@@ -140,7 +145,7 @@ int json_write_file(const JsonValue* value, const char* filename);
 char* json_write_string(const JsonValue* value);
 
 /* Validation function */
-int json_validate_strgin(const char* json_string);
+int json_validate_string(const char* json_string);
 
 /* Error handling */
 const JsonError* json_get_last_error(void);

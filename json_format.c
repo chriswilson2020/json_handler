@@ -2,6 +2,17 @@
 #include "json.h"
 #include <math.h>
 
+static JsonError current_error;
+
+static void set_format_error(JsonErrorCode code, const char* message) {
+    current_error.code = code;
+    strncpy(current_error.message, message, sizeof(current_error.message) -1 );
+    current_error.message[sizeof(current_error.message) -1 ] = '\0';
+    current_error.line = 0;     /* Line/column not applicable for formatting */
+    current_error.column = 0;
+    current_error.context[0] = '\0';
+}
+
 /* Define default pretty print configurations */
 const JsonFormatConfig JSON_FORMAT_DEFAULT = {
     .indent_string = "  ",          /* Two spaces */
@@ -52,13 +63,17 @@ typedef struct {
 /* Pretty Print functions */
 static StringBuilder* string_builder_create(const JsonFormatConfig* config) {
     StringBuilder* sb = (StringBuilder*)malloc(sizeof(StringBuilder));
-    if (!sb) return NULL;
+    if (!sb) {
+        set_format_error(JSON_ERROR_FORMAT_MEMORY_ALLOCATION, "Failed to allocate StringBuilder");
+        return NULL;
+    }
 
     sb->capacity = 1024; /* Initial capacity */
     sb->buffer = (char*)malloc(sb->capacity);
 
     if (!sb->buffer) {
         free(sb);
+        set_format_error(JSON_ERROR_FORMAT_MEMORY_ALLOCATION, "Failed to allocate StringBuilder buffer");
         return NULL;
     }
 
@@ -78,7 +93,10 @@ static int string_builder_ensure_capacity(StringBuilder* sb, size_t additional) 
         }
 
         char* new_buffer = (char*)realloc(sb->buffer, new_capacity);
-        if (!new_buffer) return 0;
+        if (!new_buffer) {
+            set_format_error(JSON_ERROR_FORMAT_MEMORY_ALLOCATION, "Failed to relocate StringBuilder buffer");
+            return 0;
+        }
 
         sb->buffer = new_buffer;
         sb->capacity = new_capacity;
@@ -348,12 +366,32 @@ static int format_value(StringBuilder* sb, const JsonValue* value) {
 
 /* Public formatting function */
 char* json_format_string(const JsonValue* value, const JsonFormatConfig* config) {
-    if (!config) config = &JSON_FORMAT_DEFAULT;
+    /* Reset error state */
+    current_error.code = JSON_ERROR_NONE;
+
+    if(!value) {
+        set_format_error(JSON_ERROR_FORMAT_NULL_INPUT, "NULL value passed to json_format_string");
+        return NULL;
+    }
+
+    if (!config) config = &JSON_FORMAT_DEFAULT;    
+    
+    /* Validate config */
+    if (!config->indent_string || !config->line_end || 
+        config->spaces_after_colon < 0 || config->spaces_after_comma < 0 ||
+        config->max_inline_length < 0 || config->precision < 0) {
+        set_format_error(JSON_ERROR_FORMAT_INVALID_CONFIG,
+            "Invalid format configuration");
+        return NULL;
+    }
 
     StringBuilder* sb = string_builder_create(config);
-    if (!sb) return NULL;
+    if (!sb) return NULL; /* Error already set by string builder create */
 
     if (!format_value(sb, value)) {
+        if (current_error.code == JSON_ERROR_NONE) {
+            set_format_error(JSON_ERROR_FORMAT_ERROR, "Failed to format JSON value");
+        }
         free(sb->buffer);
         free(sb);
         return NULL;
@@ -361,10 +399,20 @@ char* json_format_string(const JsonValue* value, const JsonFormatConfig* config)
 
     /* Add final newline if configured */
     if (config->line_end[0]) {
+        if (!string_builder_append(sb, config->line_end)) {
+            set_format_error(JSON_ERROR_FORMAT_BUFFER_OVERFLOW, "Failed to append final newline");
+            free(sb->buffer);
+            free(sb);
+            return NULL;
+        }
         string_builder_append(sb, config->line_end);
     }
 
     char* result = strdup(sb->buffer);
+    if (!result) {
+        set_format_error(JSON_ERROR_FORMAT_MEMORY_ALLOCATION, "Failed to duplicate final string");
+        return NULL;
+    }
     free(sb->buffer);
     free(sb);
     return result;
@@ -372,17 +420,32 @@ char* json_format_string(const JsonValue* value, const JsonFormatConfig* config)
 
 /* File output function */
 int json_format_file(const JsonValue* value, const char* filename, const JsonFormatConfig* config) {
+    if (!filename) {
+        set_format_error(JSON_ERROR_FORMAT_NULL_INPUT, "NULL filename passed to json_format_file");
+        return 0;
+    }
     char* formatted = json_format_string(value, config);
-    if (!formatted) return 0;
+    if (!formatted) {
+        /* Error alredy set by json_format_string */
+        return 0;
+    }
 
     FILE* file = fopen(filename, "w");
     if (!file) {
+        set_format_error(JSON_ERROR_FORMAT_FILE_WRITE, "Failed to open output file for writing");
         free(formatted);
         return 0;
     }
 
     size_t len = strlen(formatted);
     size_t written = fwrite(formatted, 1, len, file);
+
+    if (written != len) {
+        set_format_error(JSON_ERROR_FORMAT_FILE_WRITE, "Failed to write complete formatted JSON to file");
+        fclose(file);
+        free(formatted);
+        return 0;
+    }
 
     fclose(file);
     free(formatted);

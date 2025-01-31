@@ -1,9 +1,0 @@
-{
-    "array": [1.000000, 2.000000, 3.000000],
-    "nested": {
-        "a": "value",
-        "b": true
-    },
-    "number": 123.456000,
-    "string": "Hello\nWorld"
-}
