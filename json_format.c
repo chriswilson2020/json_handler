@@ -116,6 +116,19 @@ static int string_builder_append(StringBuilder* sb, const char* str) {
 
 /* Format and append a number */
 static int string_builder_append_number(StringBuilder* sb, double num) {
+     // Check for invalid numbers
+    if (isnan(num)) {
+        set_format_error(JSON_ERROR_INVALID_NUMBER_NAN,
+                        "Cannot format NaN value");
+        return 0;
+    }
+    
+    if (isinf(num)) {
+        set_format_error(JSON_ERROR_INVALID_NUMBER_INFINITY,
+                        "Cannot format Infinity value");
+        return 0;
+    }
+    
     char buffer[32];
     int len;
 

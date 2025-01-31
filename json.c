@@ -37,6 +37,15 @@ JsonValue *json_create_boolean(int boolean_value)
 
 JsonValue *json_create_number(double number_value)
 {
+    // Validate the number
+    if (isnan(number_value)) {
+        return NULL;
+    }
+    
+    if (isinf(number_value)) {
+        return NULL;
+    }
+    
     JsonValue *value = json_value_init();
     if (value)
     {

@@ -1,6 +1,7 @@
 /* json_parser.c */
 #include "json.h"
 #include <ctype.h>
+#include <math.h>
 
 /* parser state structure */
 typedef struct ParserState {
@@ -366,7 +367,7 @@ static JsonValue* parse_number(ParserState* state) {
     state->input++;
     state->column++;
 
-    // Handle optionsl plus or minius sign in exponent
+    // Handle options plus or minius sign in exponent
     if (*state->input == '+' || *state->input == '-') {
         state->input++;
         state->column++;
@@ -396,6 +397,19 @@ static JsonValue* parse_number(ParserState* state) {
   
     double number = atof(number_str);
     free(number_str);
+
+        // Check for NaN/Infinity
+    if (isnan(number)) {
+        set_parser_error(state, JSON_ERROR_INVALID_NUMBER_NAN,
+                        "NaN values are not allowed in JSON");
+        return NULL;
+    }
+    
+    if (isinf(number)) {
+        set_parser_error(state, JSON_ERROR_INVALID_NUMBER_INFINITY,
+                        "Infinity values are not allowed in JSON");
+        return NULL;
+    }
 
    JsonValue* value = json_create_number(number);
    if (!value) {
