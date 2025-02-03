@@ -77,6 +77,8 @@ int main() {
 ```
 
 ### Writing JSON to a file
+## NOT YET IMPLEMENTED ##
+## COMMING SOON ##
 ```c
 #include "json.h"
 #include <stdio.h>
@@ -115,6 +117,7 @@ int main() {
 - `int json_format_file(const JsonValue* value, const char* filename, const JsonFormatConfig* config);`
 
 ### JSON Writing
+## COMING SOON ##
 - `int json_write_file(const JsonValue* value, const char* filename);`
 - `char* json_write_string(const JsonValue* value);`
 
