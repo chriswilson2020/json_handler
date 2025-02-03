@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h> // Added this after uint32_t errors on compile on risc-V Fedora 64bit
 
 #define JSON_MAX_NESTING_DEPTH 32
 
