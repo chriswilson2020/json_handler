@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "json.h"
+#include <math.h>
+#include <assert.h>
 
 void test_formatting_options(void) {
     printf("\nTesting JSON Formatting Options\n");
@@ -24,19 +26,19 @@ void test_formatting_options(void) {
     /* Test default formatting */
     printf("Default formatting:\n");
     char* default_output = json_format_string(obj, &JSON_FORMAT_DEFAULT);
-    printf("%s\n", default_output);
+    printf("%s\n\n", default_output);
     free(default_output);
 
     /* Test compact formatting */
-    printf("\nCompact formatting:\n");
+    printf("Compact formatting:\n");
     char* compact_output = json_format_string(obj, &JSON_FORMAT_COMPACT);
-    printf("%s\n", compact_output);
+    printf("%s\n\n", compact_output);
     free(compact_output);
 
     /* Test pretty formatting */
-    printf("\nPretty formatting:\n");
+    printf("Pretty formatting:\n");
     char* pretty_output = json_format_string(obj, &JSON_FORMAT_PRETTY);
-    printf("%s\n", pretty_output);
+    printf("%s\n\n", pretty_output);
     free(pretty_output);
 
     /* Test custom formatting */
@@ -52,13 +54,13 @@ void test_formatting_options(void) {
         .sort_object_keys = 1            /* Sort keys */
     };
 
-    printf("\nCustom formatting:\n");
+    printf("Custom formatting (with tabs):\n");
     char* custom_output = json_format_string(obj, &custom_config);
-    printf("%s\n", custom_output);
+    printf("%s\n\n", custom_output);
     free(custom_output);
 
     /* Test file output */
-    printf("\nTesting file output... ");
+    printf("Testing file output... ");
     if (json_format_file(obj, "test_output.json", &JSON_FORMAT_PRETTY)) {
         printf("Success!\n");
     } else {
@@ -68,6 +70,7 @@ void test_formatting_options(void) {
     /* Clean up */
     json_free(obj);
 }
+
 
 /* Helper function to test validation and print results */
 static void test_validation(const char* test_name, const char* json_input) {
@@ -184,6 +187,103 @@ static char* generate_nested_json(int depth) {
     
     json[size - 1] = '\0';
     return json;
+}
+
+void test_nan_handling(void) {
+    printf("\nJSON NaN Handling Tests\n");
+    printf("=====================\n\n");
+
+    /* Test 1: NaN in Array */
+    printf("Test 1: NaN in Array\n");
+    JsonValue* array = json_create_array();
+    json_array_append(array, json_create_number(1.0));
+    JsonValue* nan_value = json_create_number(NAN);
+    json_array_append(array, nan_value);
+    json_array_append(array, json_create_number(2.0));
+    
+    printf("Array with NaN (internal structure):\n");
+    printf("Total elements: %zu\n", array->value.array->size);
+    printf("Element types: %.1f, NaN, %.1f\n\n", 
+           array->value.array->items[0]->value.number,
+           array->value.array->items[2]->value.number);
+
+    printf("Array with NaN (print_value):\n");
+    json_print_value(array, 0);
+    printf("\n");
+
+    char* formatted = json_format_string(array, &JSON_FORMAT_COMPACT);
+    printf("Array with NaN (formatted): %s\n", formatted);
+    free(formatted);
+
+    formatted = json_format_string(array, &JSON_FORMAT_PRETTY);
+    printf("Array with NaN (pretty): \n%s\n", formatted);
+    free(formatted);
+    json_free(array);
+
+    /* Test 2: NaN in Object */
+    printf("\nTest 2: NaN in Object\n");
+    JsonValue* obj = json_create_object();
+    json_object_set(obj, "valid1", json_create_number(1.0));
+    json_object_set(obj, "invalid", json_create_number(NAN));
+    json_object_set(obj, "valid2", json_create_number(2.0));
+
+    printf("Object with NaN (internal check):\n");
+    JsonValue* check = json_object_get(obj, "invalid");
+    printf("NaN value retrievable: %s\n", check ? "yes" : "no");
+    printf("Is NaN: %s\n\n", (check && isnan(check->value.number)) ? "yes" : "no");
+
+    printf("Object with NaN (print_value):\n");
+    json_print_value(obj, 0);
+    printf("\n");
+
+    formatted = json_format_string(obj, &JSON_FORMAT_PRETTY);
+    printf("Object with NaN (formatted):\n%s\n", formatted);
+    free(formatted);
+    json_free(obj);
+
+    /* Test 3: Complex Nested Structure */
+    printf("\nTest 3: Complex Nested Structure\n");
+    JsonValue* complex = json_create_object();
+    JsonValue* nested_array = json_create_array();
+    JsonValue* nested_obj = json_create_object();
+
+    /* Build nested structure */
+    json_array_append(nested_array, json_create_number(1.0));
+    json_array_append(nested_array, json_create_number(NAN));
+    json_array_append(nested_array, json_create_number(3.0));
+
+    json_object_set(nested_obj, "valid", json_create_number(42.0));
+    json_object_set(nested_obj, "invalid", json_create_number(NAN));
+    json_object_set(nested_obj, "bool", json_create_boolean(1));
+
+    json_object_set(complex, "array", nested_array);
+    json_object_set(complex, "object", nested_obj);
+
+    printf("Complex structure (print_value):\n");
+    json_print_value(complex, 0);
+    printf("\n");
+
+    formatted = json_format_string(complex, &JSON_FORMAT_PRETTY);
+    printf("Complex structure (formatted):\n%s\n", formatted);
+    free(formatted);
+    json_free(complex);
+
+    /* Test 4: Sequential NaN Updates */
+    printf("\nTest 4: Sequential NaN Updates\n");
+    JsonValue* seq = json_create_object();
+    printf("1. Setting normal value\n");
+    json_object_set(seq, "test", json_create_number(1.0));
+    
+    printf("2. Updating to NaN\n");
+    json_object_set(seq, "test", json_create_number(NAN));
+    
+    printf("3. Updating back to normal\n");
+    json_object_set(seq, "test", json_create_number(2.0));
+
+    formatted = json_format_string(seq, &JSON_FORMAT_COMPACT);
+    printf("Final result: %s\n", formatted);
+    free(formatted);
+    json_free(seq);
 }
 
 int main() {
@@ -341,6 +441,10 @@ int main() {
     /* Validation Tests */
     printf("\n=== JSON Validation Tests ===\n");
     test_json_validation();
+
+     /* NaN Handling Tests */
+    printf("\n=== NaN Handling Tests ===\n");
+    test_nan_handling();
 
     printf("\nAll tests completed!\n");
     return 0;
