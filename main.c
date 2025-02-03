@@ -286,6 +286,186 @@ void test_nan_handling(void) {
     json_free(seq);
 }
 
+/* Helper functions remain the same */
+static void print_file_test_header(const char* test_name) {
+    printf("\n=== %s ===\n", test_name);
+}
+
+/* Helper function to create test data */
+static JsonValue* create_test_data(void) {
+    JsonValue* test_obj = json_create_object();
+    json_object_set(test_obj, "name", json_create_string("Test Data"));
+    JsonValue* numbers = json_create_array();
+    for (int i = 1; i <= 5; i++) {
+        json_array_append(numbers, json_create_number(i));
+    }
+    json_object_set(test_obj, "numbers", numbers);
+    return test_obj;
+}
+
+/* Helper function for consistent JSON formatting */
+static void print_json_value(const JsonValue* value) {
+    JsonFormatConfig pretty_config = JSON_FORMAT_PRETTY;
+    pretty_config.precision = 0;  // No decimal places for whole numbers
+    char* formatted = json_format_string(value, &pretty_config);
+    if (formatted) {
+        printf("%s\n", formatted);
+        free(formatted);
+    }
+}
+
+/* Helper function for writing JSON with consistent formatting */
+static int write_formatted_json_to_file(const JsonValue* value, const char* filename) {
+    JsonFormatConfig write_config = JSON_FORMAT_COMPACT;
+    write_config.precision = 0;  // No decimal places for whole numbers
+    
+    FILE* file = fopen(filename, "wb");
+    if (!file) {
+        const JsonError* error = json_get_file_error();
+        printf("Failed to open file for writing: %s\n", error->message);
+        return 0;
+    }
+
+    char* formatted = json_format_string(value, &write_config);
+    if (!formatted) {
+        fclose(file);
+        return 0;
+    }
+
+    size_t len = strlen(formatted);
+    size_t written = fwrite(formatted, 1, len, file);
+    free(formatted);
+    fclose(file);
+
+    return written == len;
+}
+
+void test_file_operations(void) {
+    printf("\nFile Operations Test Suite\n");
+    printf("=========================\n\n");
+
+    JsonValue* test_obj = create_test_data();
+
+    /* Test 1: Basic file writing */
+    print_file_test_header("Basic File Writing Test");
+    const char* basic_file = "test_basic.json";
+    if (write_formatted_json_to_file(test_obj, basic_file)) {
+        printf("Successfully wrote %s\n", basic_file);
+        
+        JsonValue* read_obj = json_parse_file(basic_file);
+        if (read_obj) {
+            printf("Successfully read back the file:\n");
+            print_json_value(read_obj);
+            json_free(read_obj);
+        } else {
+            const JsonError* error = json_get_file_error();
+            printf("Failed to read file: %s\n", error->message);
+        }
+    } else {
+        const JsonError* error = json_get_file_error();
+        printf("Failed to write file: %s\n", error->message);
+    }
+
+    /* Test 2: Stream operations */
+    print_file_test_header("Stream Operations Test");
+    FILE* temp = tmpfile();
+    if (temp) {
+        JsonFormatConfig stream_config = JSON_FORMAT_COMPACT;
+        stream_config.precision = 0;
+        char* formatted = json_format_string(test_obj, &stream_config);
+        
+        if (formatted && fwrite(formatted, 1, strlen(formatted), temp) > 0) {
+            rewind(temp);
+            JsonValue* read_value = json_parse_stream(temp);
+            if (read_value) {
+                printf("Successfully wrote and read from stream:\n");
+                print_json_value(read_value);
+                json_free(read_value);
+            } else {
+                const JsonError* error = json_get_file_error();
+                printf("Failed to read from stream: %s\n", error->message);
+            }
+            free(formatted);
+        } else {
+            const JsonError* error = json_get_file_error();
+            printf("Failed to write to stream: %s\n", error->message);
+        }
+        fclose(temp);
+    } else {
+        printf("Failed to create temporary file\n");
+    }
+
+    /* Test 3: Advanced file writing */
+    print_file_test_header("Advanced File Writing Test");
+    const char* advanced_file = "test_advanced.json";
+    JsonFileWriteConfig write_config = {
+        .buffer_size = 1024,
+        .temp_suffix = ".tmp",
+        .sync_on_close = 1
+    };
+
+    JsonFormatConfig format_config = JSON_FORMAT_COMPACT;
+    format_config.precision = 0;
+    if (json_write_file_ex(test_obj, advanced_file, &write_config)) {
+        printf("Successfully wrote %s with custom config\n", advanced_file);
+        
+        JsonValue* read_obj = json_parse_file(advanced_file);
+        if (read_obj) {
+            printf("Successfully read back the file:\n");
+            print_json_value(read_obj);
+            json_free(read_obj);
+        } else {
+            const JsonError* error = json_get_file_error();
+            printf("Failed to read file: %s\n", error->message);
+        }
+    } else {
+        const JsonError* error = json_get_file_error();
+        printf("Failed to write file: %s\n", error->message);
+    }
+
+    /* Test 4: Partial file reading */
+    print_file_test_header("Partial File Reading Test");
+    printf("Reading from %s in small chunks:\n", basic_file);
+    JsonFileReader* reader = json_file_reader_create(basic_file, 16);
+    if (reader) {
+        printf("Reading file in chunks:\n");
+        size_t total_bytes = 0;
+        int chunk_count = 0;
+        char buffer[17];
+        size_t bytes;
+        
+        while ((bytes = fread(buffer, 1, 16, reader->file)) > 0) {
+            buffer[bytes] = '\0';
+            printf("Chunk %d (%zu bytes): %s\n", ++chunk_count, bytes, buffer);
+            total_bytes += bytes;
+        }
+        
+        printf("\nTotal bytes read: %zu in %d chunks\n", total_bytes, chunk_count);
+        json_file_reader_free(reader);
+    } else {
+        const JsonError* error = json_get_file_error();
+        printf("Failed to create file reader: %s\n", error->message);
+    }
+
+    /* Test 5: Error cases */
+    print_file_test_header("Error Cases Test");
+    printf("Testing non-existent file:\n");
+    JsonValue* nonexistent = json_parse_file("nonexistent.json");
+    if (!nonexistent) {
+        printf("Expected error when reading non-existent file: Failed to open file for reading\n");
+    }
+
+    printf("\nTesting write to invalid path:\n");
+    if (!json_write_file(test_obj, "/invalid/path/test.json")) {
+        const JsonError* error = json_get_file_error();
+        printf("Expected error when writing to invalid path: %s\n", error->message);
+    }
+
+    /* Cleanup */
+    json_free(test_obj);
+    printf("\nFile operation tests completed!\n");
+}
+
 int main() {
     printf("Testing JSON Library Implementation\n");
     printf("===================================\n\n");
@@ -445,6 +625,12 @@ int main() {
      /* NaN Handling Tests */
     printf("\n=== NaN Handling Tests ===\n");
     test_nan_handling();
+
+    printf("\n=== File Operation Tests ===\n");
+    test_file_operations();
+
+    printf("\nAll tests completed!\n");
+    return 0;
 
     printf("\nAll tests completed!\n");
     return 0;

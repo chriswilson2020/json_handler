@@ -67,18 +67,6 @@ static int should_skip_value(const JsonValue *value)
     return value && value->type == JSON_NUMBER && isnan(value->value.number);
 }
 
-/* Helper function to check for more valid pairs */
-static int has_more_valid_pairs(JsonKeyValue* start) {
-    JsonKeyValue* current = start;
-    while (current) {
-        if (!should_skip_value(current->value)){
-            return 1;
-        }
-        current = current->next;
-    }
-    return 0;
-}
-
 /* Pretty Print functions */
 static StringBuilder *string_builder_create(const JsonFormatConfig *config)
 {

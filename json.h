@@ -42,6 +42,8 @@ typedef enum{
     JSON_ERROR_FORMAT_NULL_INPUT,
     JSON_ERROR_INVALID_NUMBER_NAN,
     JSON_ERROR_INVALID_NUMBER_INFINITY,
+    JSON_ERROR_FILE_READ,    /* Error reading from file */
+    JSON_ERROR_FILE_WRITE,   /* Error writing to file */
 } JsonErrorCode;
 
 typedef enum {
@@ -168,5 +170,35 @@ const JsonError* json_get_last_error(void);
 
 /* Cleanup function */
 void json_free(JsonValue* value);
+
+/* Partial file reading structure */
+typedef struct JsonFileReader {
+    FILE* file;
+    char* buffer;
+    size_t buffer_size;
+    size_t bytes_read;
+} JsonFileReader;
+
+/* File writing configuration */
+typedef struct JsonFileWriteConfig {
+    size_t buffer_size;      /* Buffer size for writing */
+    const char* temp_suffix; /* Suffix for temporary file during writing */
+    int sync_on_close;      /* Whether to flush buffers before closing */
+} JsonFileWriteConfig;
+
+/* File operations */
+JsonValue* json_parse_stream(FILE* stream);
+int json_write_stream(const JsonValue* value, FILE* stream);
+int json_write_file(const JsonValue* value, const char* filename);
+int json_write_file_ex(const JsonValue* value, const char* filename,
+                      const JsonFileWriteConfig* config);
+
+/* Partial file reading */
+JsonFileReader* json_file_reader_create(const char* filename, size_t buffer_size);
+JsonValue* json_file_reader_next(JsonFileReader* reader);
+void json_file_reader_free(JsonFileReader* reader);
+
+/* Error handling */
+const JsonError* json_get_file_error(void);
 
 #endif /* JSON_H */
