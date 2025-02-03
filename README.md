@@ -15,6 +15,35 @@ This is a lightweight and portable JSON parsing, validation, formatting, and ser
 - Error handling with detailed messages
 - Memory management functions for safe usage
 
+## Compatibility
+
+### **Microcontroller Compatibility Table for JSON Library**
+Here’s a **detailed compatibility table** for various microcontrollers, analyzing **file I/O, memory, floating-point, and required modifications**.
+
+| **Microcontroller** | **CPU** | **RAM** | **File I/O (`fopen`, `fread`)** | **Dynamic Memory (`malloc`)** | **Floating-Point (`math.h`)** | **Runs JSON Library As-Is?** | **Required Modifications** |
+|--------------------|---------|---------|---------------------------------|------------------------------|-----------------------------|----------------------------|------------------------------|
+| **ESP32 (Xtensa)** | Dual-Core 240MHz | 520KB | ✅ SPIFFS, FatFS | ✅ Yes | ✅ Hardware FPU | ✅ Yes | None |
+| **ESP32-S3** | Dual-Core 240MHz | 512KB + PSRAM | ✅ SPIFFS, FatFS | ✅ Yes | ✅ Hardware FPU | ✅ Yes | None |
+| **ESP32-C3** | Single-Core 160MHz (RISC-V) | 400KB | ✅ SPIFFS, FatFS | ✅ Yes | ⚠️ Soft-FPU (slower math) | ⚠️ Yes, but slower | Optimize floating-point, use static buffers |
+| **Raspberry Pi Pico (RP2040)** | Dual-Core 133MHz (Cortex-M0+) | 264KB | ❌ No native FS (use LittleFS) | ✅ Yes | ⚠️ Soft-FPU (slow math) | ⚠️ Needs filesystem | Implement FatFS or LittleFS |
+| **STM32F103 ("Blue Pill")** | Cortex-M3 @ 72MHz | 20KB | ❌ No native FS | ✅ Yes | ⚠️ No FPU (slow math) | ⚠️ Needs FatFS | Implement FatFS, avoid float math |
+| **STM32F4 (e.g. STM32F411RE)** | Cortex-M4 @ 100MHz | 128KB+ | ✅ FatFS | ✅ Yes | ✅ Hardware FPU | ✅ Yes | None |
+| **STM32H7** | Cortex-M7 @ 480MHz | 1MB+ | ✅ FatFS | ✅ Yes | ✅ Hardware FPU | ✅ Yes | None |
+| **BBC micro:bit v1 (nRF51822)** | Cortex-M0 @ 16MHz | 16KB | ❌ No native FS | ⚠️ Limited | ❌ No FPU | ❌ No | Needs filesystem, floating-point removal |
+| **BBC micro:bit v2 (nRF52833)** | Cortex-M4 @ 64MHz | 128KB | ❌ No native FS | ✅ Yes | ✅ Hardware FPU | ⚠️ No FS support | Implement virtual FS (LittleFS) |
+| **Teensy 4.1 (IMXRT1062)** | Cortex-M7 @ 600MHz | 1MB | ✅ SD, QSPI Flash | ✅ Yes | ✅ Hardware FPU | ✅ Yes | None |
+| **Arduino Uno (ATmega328P)** | AVR 8-bit @ 16MHz | 2KB | ❌ No FS | ❌ No | ❌ No | ❌ No | No heap, no floating-point, no FS |
+| **Arduino Mega (ATmega2560)** | AVR 8-bit @ 16MHz | 8KB | ❌ No FS | ❌ No | ❌ No | ❌ No | No heap, no floating-point, no FS |
+| **Z80 (CP/M, embedded)** | Zilog Z80 @ 4-10MHz | 64KB | ❌ No FS | ❌ No | ❌ No | ❌ No | Needs full rewrite, lacks heap & float math |
+| **MSP430** | 16-bit @ 16MHz | 512B-64KB | ❌ No FS | ❌ No | ❌ No | ❌ No | Not feasible |
+
+### **Summary**
+- ✅ **Runs without modification**: **ESP32, STM32F4, STM32H7, Teensy 4.1**.
+- ⚠️ **Needs minor modifications**: **ESP32-C3, Raspberry Pi Pico, STM32F103, micro:bit v2** (filesystem, floating-point optimizations).
+- ❌ **Not feasible**: **Z80, Arduino Uno/Mega, MSP430, micro:bit v1** (no heap, no filesystem, no floating-point).
+
+---
+
 ## Installation
 To use this library in your project, include the `json.h`, `json.c`, `json_parser.c`, `json_validate.c`, `json_format.c`, and `json_file.c` files in your source code and compile them together.
 
