@@ -25,6 +25,62 @@ int json_is_valid_for_output(const JsonValue *value)
     return 1;
 }
 
+/* Helper function to deep copy JSON values */
+static JsonValue* json_deep_copy(const JsonValue* src) {
+    if (!src) {
+        return NULL;
+    }
+
+    switch (src->type) {
+        case JSON_NULL:
+            return json_create_null();
+
+        case JSON_BOOLEAN:
+            return json_create_boolean(src->value.boolean);
+
+        case JSON_NUMBER:
+            return json_create_number(src->value.number);
+
+        case JSON_STRING:
+            return json_create_string(src->value.string);
+
+        case JSON_ARRAY: {
+            JsonValue* array = json_create_array();
+            if (!array) return NULL;
+
+            for (size_t i = 0; i < src->value.array->size; i++) {
+                JsonValue* item_copy = json_deep_copy(src->value.array->items[i]);
+                if (!item_copy || !json_array_append(array, item_copy)) {
+                    json_free(array);
+                    json_free(item_copy);
+                    return NULL;
+                }
+            }
+            return array;
+        }
+
+        case JSON_OBJECT: {
+            JsonValue* obj = json_create_object();
+            if (!obj) return NULL;
+
+            JsonKeyValue* current = src->value.object->pairs;
+            while (current) {
+                JsonValue* value_copy = json_deep_copy(current->value);
+                if (!value_copy || !json_object_set(obj, current->key, value_copy)) {
+                    json_free(obj);
+                    json_free(value_copy);
+                    return NULL;
+                }
+                current = current->next;
+            }
+            return obj;
+        }
+
+        default:
+            return NULL;
+    }
+}
+
 JsonValue *json_create_null(void)
 {
     JsonValue *value = json_value_init();
@@ -418,4 +474,65 @@ JsonValue *json_object_get(const JsonValue *object_value, const char *key)
         current = current->next;
     }
     return NULL; // Key not found
+}
+
+/* Implementation in json.c */
+JsonValue* json_clean_data(const JsonValue* array, const char* field_name,
+                          JsonCleanStats* stats) {
+    if (!array || array->type != JSON_ARRAY || !field_name) {
+        return NULL;
+    }
+
+    JsonValue* cleaned = json_create_array();
+    if (!cleaned) {
+        return NULL;
+    }
+
+    /* Initialize stats if provided */
+    if (stats) {
+        stats->original_count = array->value.array->size;
+        stats->cleaned_count = 0;
+        stats->removed_count = 0;
+    }
+
+    /* Process each array element */
+    for (size_t i = 0; i < array->value.array->size; i++) {
+        JsonValue* item = array->value.array->items[i];
+        
+        /* Skip non-object entries */
+        if (!item || item->type != JSON_OBJECT) {
+            continue;
+        }
+
+        /* Look for the specified field */
+        JsonValue* field = json_object_get(item, field_name);
+        
+        /* Include entry if:
+           1. Field doesn't exist (not a criteria for exclusion)
+           2. Field exists and is not NaN */
+        if (!field || 
+            (field->type == JSON_NUMBER && !isnan(field->value.number))) {
+            
+            /* Create a deep copy of the item */
+            JsonValue* copy = json_deep_copy(item);
+            if (!copy) {
+                json_free(cleaned);
+                return NULL;
+            }
+
+            if (!json_array_append(cleaned, copy)) {
+                json_free(copy);
+                json_free(cleaned);
+                return NULL;
+            }
+
+            if (stats) {
+                stats->cleaned_count++;
+            }
+        } else if (stats) {
+            stats->removed_count++;
+        }
+    }
+
+    return cleaned;
 }

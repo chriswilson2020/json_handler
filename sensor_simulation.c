@@ -40,6 +40,15 @@ static JsonValue* create_sensor_data(SensorReading* readings, size_t count) {
     return array;
 }
 
+void output_data(const char* title, JsonValue* data, const JsonFormatConfig* config) {
+    printf("\n%s:\n", title);
+    char* formatted = json_format_string(data, config);
+    if (formatted) {
+        printf("%s\n", formatted);
+        free(formatted);
+    }
+}
+
 int main() {
     srand(time(NULL));
     
@@ -51,6 +60,7 @@ int main() {
     time_t base_time = time(NULL);
     
     /* Generate readings */
+    printf("Generating sensor data with simulated data loss...\n");
     for (size_t i = 0; i < num_readings; i++) {
         readings[i].timestamp = base_time + i;
         readings[i].valid = 1;  /* Assume valid by default */
@@ -65,22 +75,6 @@ int main() {
     /* Create JSON array of readings */
     JsonValue* data = create_sensor_data(readings, num_readings);
     
-    /* Test different formatting options */
-    printf("Default formatting:\n");
-    char* default_output = json_format_string(data, &JSON_FORMAT_DEFAULT);
-    printf("%s\n", default_output);
-    free(default_output);
-    
-    printf("\nCompact formatting:\n");
-    char* compact_output = json_format_string(data, &JSON_FORMAT_COMPACT);
-    printf("%s\n", compact_output);
-    free(compact_output);
-    
-    printf("\nPretty formatting:\n");
-    char* pretty_output = json_format_string(data, &JSON_FORMAT_PRETTY);
-    printf("%s\n", pretty_output);
-    free(pretty_output);
-
     /* Custom formatting for sensor data */
     JsonFormatConfig sensor_config = {
         .indent_string = "  ",
@@ -94,17 +88,43 @@ int main() {
         .sort_object_keys = 1
     };
 
-    printf("\nCustom sensor formatting:\n");
-    char* sensor_output = json_format_string(data, &sensor_config);
-    printf("%s\n", sensor_output);
-    free(sensor_output);
+    /* Output original data */
+    output_data("Original sensor data (with missing values)", data, &sensor_config);
+
+    /* Clean data and output statistics */
+    printf("\nCleaning sensor data...\n");
+    JsonCleanStats stats;
+    JsonValue* cleaned = json_clean_data(data, "temperature", &stats);
     
-    /* Write to file */
-    printf("\nWriting to sensor_data.json...\n");
-    if (json_format_file(data, "sensor_data.json", &sensor_config)) {
-        printf("Successfully wrote sensor data to file.\n");
+    if (cleaned) {
+        printf("\nData Cleaning Statistics:\n");
+        printf("------------------------\n");
+        printf("Original readings: %zu\n", stats.original_count);
+        printf("Valid readings: %zu\n", stats.cleaned_count);
+        printf("Removed readings: %zu\n", stats.removed_count);
+        printf("Data loss percentage: %.1f%%\n", 
+               (float)stats.removed_count / stats.original_count * 100);
+        
+        /* Output cleaned data */
+        output_data("Cleaned sensor data", cleaned, &sensor_config);
+        
+        /* Write both original and cleaned data to files */
+        printf("\nWriting data to files...\n");
+        if (json_format_file(data, "sensor_data_original.json", &sensor_config)) {
+            printf("Successfully wrote original data to sensor_data_original.json\n");
+        } else {
+            printf("Failed to write original data to file\n");
+        }
+        
+        if (json_format_file(cleaned, "sensor_data_cleaned.json", &sensor_config)) {
+            printf("Successfully wrote cleaned data to sensor_data_cleaned.json\n");
+        } else {
+            printf("Failed to write cleaned data to file\n");
+        }
+        
+        json_free(cleaned);
     } else {
-        printf("Failed to write sensor data to file.\n");
+        printf("Failed to clean data\n");
     }
     
     /* Cleanup */

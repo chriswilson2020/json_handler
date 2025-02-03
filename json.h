@@ -77,6 +77,12 @@ typedef struct {
     char context[64];
 } JsonError;
 
+typedef struct {
+    size_t original_count;
+    size_t cleaned_count;
+    size_t removed_count;
+} JsonCleanStats;
+
 /* Forward declaration for object and array structures */
 struct JsonObject;
 struct JsonArray;
@@ -152,6 +158,10 @@ char* json_write_string(const JsonValue* value);
 /* Validation function */
 int json_validate_string(const char* json_string);
 int json_validate_file(const char* filename);
+
+/* Clean data by removing entries with NaN values in specified field
+   Returns a new JsonValue with clean data and optionally provides stats */
+JsonValue* json_clean_data(const JsonValue* array, const char* field_name, JsonCleanStats* stats);
 
 /* Error handling */
 const JsonError* json_get_last_error(void);
